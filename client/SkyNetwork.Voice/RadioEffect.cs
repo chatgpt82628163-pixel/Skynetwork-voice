@@ -32,7 +32,8 @@ internal struct Biquad
 
 /// <summary>
 /// Makes clean audio sound like a VHF airband receiver: 300–3000 Hz band-pass, a little
-/// compression and drive, and hiss that grows as the signal gets weaker (far away, low altitude).
+/// compression and drive, and a faint hiss that grows as the signal gets weaker (far away, low
+/// altitude). The hiss and the squelch tail can be switched off (<see cref="Noise"/>).
 /// </summary>
 internal sealed class RadioEffect
 {
@@ -44,11 +45,17 @@ internal sealed class RadioEffect
     /// <summary>Signal strength 0..1 as reported by the server.</summary>
     public float Strength { get; set; } = 1;
 
-    public static float NoiseLevel(float strength) => 0.012f + 0.2f * MathF.Pow(1 - Math.Clamp(strength, 0, 1), 2);
+    /// <summary>Receiver hiss and the squelch tail; off leaves only the band-pass voice.</summary>
+    public bool Noise { get; set; } = true;
+
+    /// <summary>Kept just audible: a strong signal is almost clean, a weak one only a little noisy.</summary>
+    public static float NoiseLevel(float strength) => 0.0015f + 0.02f * MathF.Pow(1 - Math.Clamp(strength, 0, 1), 2);
+
+    public const float SquelchLevel = 0.025f;
 
     public void Process(Span<float> samples)
     {
-        float noise = NoiseLevel(Strength);
+        float noise = Noise ? NoiseLevel(Strength) : 0;
         // Weak signals also fade a little.
         float gain = 1.6f * (0.55f + 0.45f * MathF.Sqrt(Math.Clamp(Strength, 0, 1)));
         for (int i = 0; i < samples.Length; i++)
@@ -69,7 +76,7 @@ internal sealed class RadioEffect
         for (int i = 0; i < samples.Length; i++)
         {
             float envelope = Math.Max(0, 1 - (float)(position + i) / total);
-            samples[i] = _noiseBand.Process((float)(_random.NextDouble() * 2 - 1)) * 0.18f * envelope;
+            samples[i] = Noise ? _noiseBand.Process((float)(_random.NextDouble() * 2 - 1)) * SquelchLevel * envelope : 0;
         }
     }
 }

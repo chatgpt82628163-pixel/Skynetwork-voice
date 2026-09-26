@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cerrno>
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 
 #include "geo.h"
@@ -18,6 +19,7 @@ namespace skynet {
 namespace {
 
 constexpr int64_t kSessionTimeoutMs = 60000;
+constexpr double kMaxRangeNm = 10000;  // the largest controller coverage accepted
 
 // Bounds-checked big-endian reader.
 struct Reader {
@@ -48,6 +50,12 @@ struct Reader {
         double d;
         std::memcpy(&d, &v, 8);
         return d;
+    }
+    float f32() {
+        uint32_t v = u32();
+        float f;
+        std::memcpy(&f, &v, 4);
+        return f;
     }
     std::string str() {
         uint8_t n = u8();
@@ -177,6 +185,12 @@ void VoiceServer::on_datagram(const uint8_t* data, size_t len, const sockaddr_in
                     return;
                 list.push_back(t);
             }
+            // Optional coverage per transceiver (newer controller clients).
+            if (r.left >= 4u * n)
+                for (auto& t : list) {
+                    float range = r.f32();
+                    if (std::isfinite(range)) t.range_nm = std::clamp(double(range), 0.0, kMaxRangeNm);
+                }
             s->transceivers = std::move(list);
             break;
         }
@@ -260,7 +274,7 @@ void VoiceServer::on_audio(VoiceSession& s, const uint8_t* p, size_t len) {
             float best = 0;
             for (const Transceiver* t : tx) {
                 if (t->freq_hz != rx.freq_hz) continue;
-                double range = radio_horizon_nm(t->alt_ft, rx.alt_ft);
+                double range = link_range_nm(t->alt_ft, t->range_nm, rx.alt_ft, rx.range_nm);
                 double d = distance_nm(t->lat, t->lon, rx.lat, rx.lon);
                 if (d <= range) best = std::max(best, float(1.0 - d / range));
             }
@@ -302,7 +316,7 @@ void VoiceServer::log_transmission(const VoiceSession& s, const std::vector<cons
                 if (t->freq_hz != rx.freq_hz) continue;
                 same_freq = true;
                 double d = distance_nm(t->lat, t->lon, rx.lat, rx.lon);
-                double range = radio_horizon_nm(t->alt_ft, rx.alt_ft);
+                double range = link_range_nm(t->alt_ft, t->range_nm, rx.alt_ft, rx.range_nm);
                 if (best_d < 0 || d - range < best_d - best_range) {
                     best_d = d;
                     best_range = range;

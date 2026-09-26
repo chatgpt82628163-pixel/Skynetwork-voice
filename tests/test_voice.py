@@ -65,10 +65,12 @@ class VoiceClient:
         self.token = struct.unpack(">I", data[4:8])[0] if self.ok else None
         self.reason = data[5:5 + data[4]].decode() if not self.ok else None
 
-    def tune(self, *xcvrs):
+    def tune(self, *xcvrs, ranges=None):
         body = struct.pack(">IB", self.token, len(xcvrs))
         for i, (freq, lat, lon, alt) in enumerate(xcvrs):
             body += struct.pack(">BIddd", i, freq, lat, lon, alt)
+        for r in ranges or []:
+            body += struct.pack(">f", r)
         self.sock.sendto(vpkt(4, body), self.addr)
 
     def talk(self, seq, payload, tx_ids=(0,)):
@@ -110,6 +112,26 @@ class VoiceTest(Network):
             with self.assertRaises(socket.timeout):
                 c.sock.recv(1500)
 
+
+    def test_controller_coverage_beyond_the_horizon(self):
+        # A centre with 1000 nm of coverage is heard by an aircraft far beyond the radio horizon,
+        # and hears it; without the coverage field the horizon still decides.
+        ctr = VoiceClient(self.voice_port, 1000003, "UUWV_CTR", "pw3")
+        low = VoiceClient(self.voice_port, 1000001, "AFL5", "pw1")
+        ctr.tune((127500000, 55.97, 37.41, 100), ranges=[1000])
+        low.tune((127500000, 59.80, 30.26, 1000))        # ~330 nm away at 1000 ft
+        time.sleep(0.2)
+        ctr.talk(1, b"HELLO")
+        seq, callsign, rx, payload = low.recv_audio()
+        self.assertEqual((callsign, payload), ("UUWV_CTR", b"HELLO"))
+        self.assertTrue(0.5 < rx[0][1] < 0.8)
+        low.talk(2, b"ROGER")
+        self.assertEqual(ctr.recv_audio()[1], "AFL5")
+        ctr.tune((127500000, 55.97, 37.41, 100))           # an old client: no coverage
+        time.sleep(0.2)
+        ctr.talk(3, b"AGAIN")
+        with self.assertRaises(socket.timeout):
+            low.sock.recv(1500)
 
     def test_suspension_kicks_and_blocks(self):
         admin = os.path.join(BUILD, "skynet-admin")
