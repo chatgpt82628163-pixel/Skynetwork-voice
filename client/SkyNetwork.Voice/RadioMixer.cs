@@ -22,6 +22,8 @@ public sealed class RadioMixer : ISampleProvider
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(AudioFormat.SampleRate, 1);
     public Func<uint, float> ReceiveVolume { get; set; }
     public float MasterVolume { get; set; } = 1;
+    /// <summary>Receiver hiss and squelch tail on received transmissions (the voice filter stays).</summary>
+    public bool RadioNoise { get; set; } = true;
 
     /// <summary>Someone started (true) or stopped (false) being heard on a frequency. Raised on the audio thread.</summary>
     public event Action<string, uint, bool>? Activity;
@@ -52,7 +54,7 @@ public sealed class RadioMixer : ISampleProvider
         {
             if (!_streams.TryGetValue(packet.Callsign, out var s) || s.Finished)
                 _streams[packet.Callsign] = s = new RxStream(packet.Callsign);
-            s.Add(packet, freq, strength, volume);
+            s.Add(packet, freq, strength, volume, RadioNoise);
         }
     }
 
@@ -113,8 +115,9 @@ internal sealed class RxStream(string callsign)
     public bool Audible => _state == State.Playing;
     public bool Finished => _state == State.Finished;
 
-    public void Add(AudioPacket p, uint freq, float strength, float volume)
+    public void Add(AudioPacket p, uint freq, float strength, float volume, bool noise = true)
     {
+        _effect.Noise = noise;
         if (_state is State.Tail or State.Finished) return;
         if (_state == State.Playing && (int)(p.Sequence - _next) < 0) return; // too late, already concealed
         _frames[p.Sequence] = p.Opus;

@@ -12,6 +12,7 @@
 //   AUTH_OK     s->c  u32 token
 //   AUTH_FAIL   s->c  str reason
 //   TRANSCEIVERS c->s u32 token, u8 n, n * { u8 id, u32 freq_hz, f64 lat, f64 lon, f64 alt_ft }
+//                     [, n * f32 range_nm]   optional: a controller's coverage beyond the radio horizon
 //   AUDIO       c->s  u32 token, u32 seq, u8 last, u8 n, n * u8 tx_id, opus payload...
 //   AUDIO_RX    s->c  u32 seq, u8 last, str callsign, u8 n, n * { u32 freq_hz, f32 strength }, opus...
 //   KEEPALIVE   c->s  u32 token            -> KEEPALIVE_ACK s->c (empty)
@@ -43,6 +44,7 @@ struct Transceiver {
     uint8_t id;
     uint32_t freq_hz;
     double lat, lon, alt_ft;
+    double range_nm = 0;  // a controller's coverage (from its sector border); 0: the radio horizon only
 };
 
 struct VoiceSession {

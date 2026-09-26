@@ -17,4 +17,9 @@ inline double radio_horizon_nm(double h1_ft, double h2_ft) {
     return 1.23 * (std::sqrt(std::max(h1_ft, 30.0)) + std::sqrt(std::max(h2_ft, 30.0)));
 }
 
+// How far two transceivers hear each other: the radio horizon, or a controller's coverage when larger.
+inline double link_range_nm(double h1_ft, double r1_nm, double h2_ft, double r2_nm) {
+    return std::max({radio_horizon_nm(h1_ft, h2_ft), r1_nm, r2_nm});
+}
+
 }  // namespace skynet

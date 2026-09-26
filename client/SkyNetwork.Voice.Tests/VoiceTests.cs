@@ -103,6 +103,32 @@ public class AudioTests
         Assert.True(RadioEffect.NoiseLevel(0.1f) > 5 * RadioEffect.NoiseLevel(1f));
     }
 
+    [Fact]
+    public void RadioNoiseIsFaint_AndCanBeSwitchedOff()
+    {
+        // Silence in: only the hiss comes out, and it stays far below speech (RMS ~0.1-0.3).
+        var hiss = new float[9600];
+        new RadioEffect { Strength = 0.2f }.Process(hiss);
+        Assert.InRange(Signal.Rms(hiss), 0.0001, 0.01);
+
+        var quiet = new float[9600];
+        var off = new RadioEffect { Strength = 0.2f, Noise = false };
+        off.Process(quiet);
+        Assert.Equal(0, Signal.Rms(quiet));
+        var tail = new float[960];
+        off.SquelchTail(tail, 0, tail.Length);
+        Assert.All(tail, x => Assert.Equal(0, x));
+    }
+
+    [Fact]
+    public void TransceiversCarryTheControllersCoverage()
+    {
+        var plain = Protocol.Transceivers(7, [new Transceiver(0, 118_100_000, 55.9, 37.4, 100)]);
+        var wide = Protocol.Transceivers(7, [new Transceiver(0, 118_100_000, 55.9, 37.4, 100, 1000)]);
+        Assert.Equal(plain.Length + 4, wide.Length);  // an old server reads the same list and stops
+        Assert.Equal(1000f, System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(wide.AsSpan(wide.Length - 4)));
+    }
+
     private static AudioPacket Packet(uint seq, byte[] opus, bool last = false, float strength = 0.9f, uint freq = 118_100_000) =>
         new(seq, last, "AFL123", [new RxFrequency(freq, strength)], opus);
 

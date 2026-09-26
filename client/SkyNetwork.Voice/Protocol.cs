@@ -18,8 +18,11 @@ public enum PacketType : byte
     Kick = 10,
 }
 
-/// <summary>A radio antenna: a frequency at a place. Aircraft have one per radio; a controller one per radio and site.</summary>
-public readonly record struct Transceiver(byte Id, uint FrequencyHz, double Latitude, double Longitude, double AltitudeFeet);
+/// <summary>
+/// A radio antenna: a frequency at a place. Aircraft have one per radio; a controller one per radio and site,
+/// with its coverage in <paramref name="RangeNm"/> (the server takes the larger of it and the radio horizon).
+/// </summary>
+public readonly record struct Transceiver(byte Id, uint FrequencyHz, double Latitude, double Longitude, double AltitudeFeet, double RangeNm = 0);
 
 /// <summary>A frequency a received transmission arrived on and how strong it is there (0..1).</summary>
 public readonly record struct RxFrequency(uint FrequencyHz, float Strength);
@@ -63,6 +66,9 @@ public static class Protocol
             w.F64(t.Longitude);
             w.F64(t.AltitudeFeet);
         }
+        // Coverage after the list: servers before it read only the list and ignore the rest.
+        if (list.Any(t => t.RangeNm > 0))
+            foreach (var t in list) w.F32((float)Math.Clamp(t.RangeNm, 0, 10000));
         return w.ToArray();
     }
 
@@ -139,6 +145,13 @@ public static class Protocol
         {
             Span<byte> b = stackalloc byte[4];
             BinaryPrimitives.WriteUInt32BigEndian(b, v);
+            _s.Write(b);
+        }
+
+        public void F32(float v)
+        {
+            Span<byte> b = stackalloc byte[4];
+            BinaryPrimitives.WriteSingleBigEndian(b, v);
             _s.Write(b);
         }
 

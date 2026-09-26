@@ -14,8 +14,11 @@ public sealed record Radio(uint FrequencyHz, bool Receive = true, bool Transmit 
     public static string FormatMhz(uint hz) => (hz / 1_000_000m).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
 }
 
-/// <summary>Where the antennas are: the aircraft, or a controller's sites.</summary>
-public readonly record struct AntennaSite(double Latitude, double Longitude, double AltitudeFeet);
+/// <summary>
+/// Where the antennas are: the aircraft, or a controller's sites. <paramref name="RangeNm"/> is a
+/// controller's coverage around the site (0: only the radio horizon counts).
+/// </summary>
+public readonly record struct AntennaSite(double Latitude, double Longitude, double AltitudeFeet, double RangeNm = 0);
 
 public enum VoiceState
 {
@@ -32,6 +35,8 @@ public sealed class VoiceSettings
     public float MicGain { get; set; } = 1;
     public float OutputVolume { get; set; } = 1;
     public PttBinding Ptt { get; set; } = PttBinding.None;
+    /// <summary>Radio noise (hiss, squelch tail) on what we hear; off gives a clean voice.</summary>
+    public bool RadioNoise { get; set; } = true;
 }
 
 /// <summary>
@@ -78,7 +83,11 @@ public sealed class VoiceClient : IDisposable
         _settings = settings;
         _ptt.Binding = settings.Ptt;
         if (_transmitter != null) _transmitter.Gain = settings.MicGain;
-        if (_mixer != null) _mixer.MasterVolume = settings.OutputVolume;
+        if (_mixer != null)
+        {
+            _mixer.MasterVolume = settings.OutputVolume;
+            _mixer.RadioNoise = settings.RadioNoise;
+        }
         if (State == VoiceState.Connected) RestartAudio();
     }
 
@@ -101,7 +110,7 @@ public sealed class VoiceClient : IDisposable
         {
             _connection = connection;
             _transmitter = new Transmitter(connection) { Gain = _settings.MicGain };
-            _mixer = new RadioMixer(ReceiveVolume) { MasterVolume = _settings.OutputVolume };
+            _mixer = new RadioMixer(ReceiveVolume) { MasterVolume = _settings.OutputVolume, RadioNoise = _settings.RadioNoise };
             _mixer.Activity += (cs, f, on) => ReceiveActivity?.Invoke(cs, f, on);
             connection.AudioReceived += p => _mixer?.Add(p);
             connection.Closed += reason =>
@@ -170,7 +179,7 @@ public sealed class VoiceClient : IDisposable
             {
                 if (list.Count == Protocol.MaxTransceivers) break;
                 byte id = (byte)list.Count;
-                list.Add(new Transceiver(id, radio.FrequencyHz, site.Latitude, site.Longitude, site.AltitudeFeet));
+                list.Add(new Transceiver(id, radio.FrequencyHz, site.Latitude, site.Longitude, site.AltitudeFeet, site.RangeNm));
                 if (radio.Transmit) tx.Add(id);
             }
         transmitIds = tx;
